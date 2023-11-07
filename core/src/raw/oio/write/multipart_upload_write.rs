@@ -22,6 +22,7 @@ use std::task::Poll;
 
 use async_trait::async_trait;
 use futures::future::BoxFuture;
+use log::info;
 
 use crate::raw::*;
 use crate::*;
@@ -139,6 +140,8 @@ impl<W: MultipartUploadWrite> MultipartUploadWriter<W> {
     }
 }
 
+static LOGGING_TARGET: &str = "opendal::services";
+
 #[async_trait]
 impl<W> oio::Write for MultipartUploadWriter<W>
 where
@@ -157,6 +160,13 @@ where
                             let w = w.take().expect("writer must be valid");
                             self.state = State::Write(Box::pin(async move {
                                 let size = bs.len();
+                                info!(
+                                    target: LOGGING_TARGET,
+                                    "multipart upload write, upload_id={}, part_number={}, size={}",
+                                    upload_id,
+                                    part_number,
+                                    size,
+                                );
                                 let part = w
                                     .write_part(
                                         &upload_id,
@@ -229,6 +239,13 @@ where
                                     let upload_id = upload_id.clone();
                                     self.state = State::Write(Box::pin(async move {
                                         let size = bs.len();
+                                        info!(
+                                            target: LOGGING_TARGET,
+                                            "multipart upload close, upload_id={}, part_number={}, size={}",
+                                            upload_id,
+                                            parts.len(),
+                                            size,
+                                        );
                                         let part = w
                                             .write_part(
                                                 &upload_id,
@@ -241,6 +258,12 @@ where
                                     }));
                                 }
                                 None => {
+                                    info!(
+                                        target: LOGGING_TARGET,
+                                        "multipart upload complete part, upload_id={}, parts={}",
+                                        upload_id,
+                                        parts.len(),
+                                    );
                                     self.state = State::Close(Box::pin(async move {
                                         let res = w.complete_part(&upload_id, &parts).await;
                                         (w, res)
@@ -250,6 +273,11 @@ where
                         }
                         None => match self.cache.clone() {
                             Some(bs) => {
+                                info!(
+                                    target: LOGGING_TARGET,
+                                    "multipart upload no upload id, len={}",
+                                    bs.len(),
+                                );
                                 self.state = State::Close(Box::pin(async move {
                                     let size = bs.len();
                                     let res = w
